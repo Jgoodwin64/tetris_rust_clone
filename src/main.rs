@@ -23,7 +23,7 @@ const GRID_HEIGHT: usize = 20;
 const TILE_SIZE: f32 = 30.0;
 const PREVIEW_TILE_SIZE: f32 = 25.0;
 
-const FALL_SPEED: f32 = 3.0;
+const FALL_SPEED: f32 = 3.0;         // Used as a fallback
 const SOFT_DROP_SPEED: f32 = 15.0;
 const INITIAL_HORIZONTAL_DELAY: f32 = 0.2;
 const HORIZONTAL_REPEAT_DELAY: f32 = 0.1;
@@ -46,15 +46,16 @@ const NES_COLORS: [Color; 7] = [
     Color { r: 1.0,    g: 0.3334, b: 0.0,    a: 1.0 }, // L
 ];
 
+// -------------------------------------------------------------------
 // MusicManager modified to use embedded audio.
 #[allow(dead_code)]
 struct MusicManager {
-    mus_stream:OutputStream,
-    mus_stream_hndl:OutputStreamHandle,
-    mus_sink:Sink,
-    mus_track:u32,
-    muted:bool,
-    paused:bool,
+    mus_stream: OutputStream,
+    mus_stream_hndl: OutputStreamHandle,
+    mus_sink: Sink,
+    mus_track: u32,
+    muted: bool,
+    paused: bool,
 }
 
 impl MusicManager {
@@ -62,63 +63,58 @@ impl MusicManager {
         let (stream, stream_handle) = OutputStream::try_default().unwrap();
         let sink = Sink::try_new(&stream_handle).unwrap();
         MusicManager {
-            mus_stream:stream,
-            mus_stream_hndl:stream_handle,
-            mus_sink:sink,
-            mus_track:0,
-            muted:false,
-            paused:false,
+            mus_stream: stream,
+            mus_stream_hndl: stream_handle,
+            mus_sink: sink,
+            mus_track: 0,
+            muted: false,
+            paused: false,
         }
     }
 
     pub fn play_song(&mut self) {
-        // Clear the current sink's buffer.
         self.mus_sink.clear();
-        // Determine the current track from the embedded MUSIC_LIST.
         let track_index = (self.mus_track % MUSIC_LIST.len() as u32) as usize;
-        let track_data = MUSIC_LIST[track_index];
+        // Increment track so that subsequent calls cycle through the list.
         self.mus_track += 1;
-        // Create an in-memory cursor for the embedded audio data.
+        let track_data = MUSIC_LIST[track_index];
         let cursor = Cursor::new(track_data);
-        // Decode the audio data and set it to repeat infinitely.
         let source = Decoder::new(cursor).unwrap().repeat_infinite();
-        // Append the source into the sink and set volume.
         self.mus_sink.append(source);
         self.mus_sink.set_volume(0.5);
         self.mus_sink.play();
     }
 
-    pub fn mute(&mut self){
-        if self.muted{
+    pub fn mute(&mut self) {
+        if self.muted {
             self.mus_sink.set_volume(0.5);
-        }
-        else{
+        } else {
             self.mus_sink.set_volume(0.0);
         }
         self.muted = !self.muted;
     }
 
-    pub fn pause(&mut self){
-        if self.paused{
+    pub fn pause(&mut self) {
+        if self.paused {
             self.mus_sink.play();
-        }
-        else{
+        } else {
             self.mus_sink.pause();
         }
         self.paused = !self.paused;
     }
 
-    pub fn reset(&mut self){
+    pub fn reset(&mut self) {
         self.mus_sink.clear();
         self.mus_track = 0;
     }
 }
 
+// -------------------------------------------------------------------
 // Tetromino definitions and game structures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum TetrominoType {
     I, O, T, S, Z, J, L,
-    BonusGold, BonusSilver, // For bonus blocks.
+    BonusGold, BonusSilver,
 }
 
 const TETROMINO_SHAPES: [[[i32; 2]; 4]; 7] = [
@@ -133,7 +129,7 @@ const TETROMINO_SHAPES: [[[i32; 2]; 4]; 7] = [
 
 const TETROMINO_ROTATION_OFFSETS: [[i32; 2]; 7] = [
     [1,0], // I
-    [0,0], // O (doesn't rotate)
+    [0,0], // O
     [1,1], // T
     [1,1], // S
     [1,1], // Z
@@ -180,14 +176,205 @@ struct SquareEffect {
     x: usize,
     y: usize,
     is_gold: bool,
-    timer: f32,             // Duration per blink phase.
-    flash_on: bool,         // Whether bonus color is displayed.
-    blinks_remaining: u32,  // Number of on-off cycles remaining.
+    timer: f32,
+    flash_on: bool,
+    blinks_remaining: u32,
     original: [[(Color, TetrominoType, u32); 4]; 4],
 }
 
+// -------------------------------------------------------------------
+// New enums for settings.
+#[derive(Clone, Copy)]
+enum Difficulty {
+    Easy,
+    Normal,
+    Hard,
+}
+
+impl Difficulty {
+    fn next(self) -> Difficulty {
+        match self {
+            Difficulty::Easy => Difficulty::Normal,
+            Difficulty::Normal => Difficulty::Hard,
+            Difficulty::Hard => Difficulty::Easy,
+        }
+    }
+    fn prev(self) -> Difficulty {
+        match self {
+            Difficulty::Easy => Difficulty::Hard,
+            Difficulty::Normal => Difficulty::Easy,
+            Difficulty::Hard => Difficulty::Normal,
+        }
+    }
+    fn as_str(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "Easy",
+            Difficulty::Normal => "Normal",
+            Difficulty::Hard => "Hard",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum GameMode {
+    Classic,
+    Timed,
+    Endless,
+}
+
+impl GameMode {
+    fn next(self) -> GameMode {
+        match self {
+            GameMode::Classic => GameMode::Timed,
+            GameMode::Timed => GameMode::Endless,
+            GameMode::Endless => GameMode::Classic,
+        }
+    }
+    fn prev(self) -> GameMode {
+        match self {
+            GameMode::Classic => GameMode::Endless,
+            GameMode::Timed => GameMode::Classic,
+            GameMode::Endless => GameMode::Timed,
+        }
+    }
+    fn as_str(self) -> &'static str {
+        match self {
+            GameMode::Classic => "Classic",
+            GameMode::Timed => "Timed",
+            GameMode::Endless => "Endless",
+        }
+    }
+}
+
+// -------------------------------------------------------------------
+// MainMenu structure for the GUI menu.
+struct MainMenu {
+    selected_index: usize, // 0: Player Name, 1: Music, 2: Difficulty, 3: Game Mode, 4: Start Game
+    player_name: String,
+    music_index: usize,
+    difficulty: Difficulty,
+    game_mode: GameMode,
+}
+
+impl MainMenu {
+    fn new() -> Self {
+        Self {
+            selected_index: 0,
+            player_name: "Player".to_string(),
+            music_index: 0,
+            difficulty: Difficulty::Normal,
+            game_mode: GameMode::Classic,
+        }
+    }
+
+    /// Returns true if "Start Game" is activated.
+    fn update(&mut self) -> bool {
+        // Navigate menu options.
+        if is_key_pressed(KeyCode::Up) {
+            if self.selected_index == 0 {
+                self.selected_index = 4;
+            } else {
+                self.selected_index -= 1;
+            }
+        }
+        if is_key_pressed(KeyCode::Down) {
+            self.selected_index = (self.selected_index + 1) % 5;
+        }
+
+        // For non-text fields, use left/right.
+        if self.selected_index == 1 {
+            if is_key_pressed(KeyCode::Left) {
+                if self.music_index == 0 {
+                    self.music_index = MUSIC_LIST.len() - 1;
+                } else {
+                    self.music_index -= 1;
+                }
+            }
+            if is_key_pressed(KeyCode::Right) {
+                self.music_index = (self.music_index + 1) % MUSIC_LIST.len();
+            }
+        }
+        if self.selected_index == 2 {
+            if is_key_pressed(KeyCode::Left) {
+                self.difficulty = self.difficulty.prev();
+            }
+            if is_key_pressed(KeyCode::Right) {
+                self.difficulty = self.difficulty.next();
+            }
+        }
+        if self.selected_index == 3 {
+            if is_key_pressed(KeyCode::Left) {
+                self.game_mode = self.game_mode.prev();
+            }
+            if is_key_pressed(KeyCode::Right) {
+                self.game_mode = self.game_mode.next();
+            }
+        }
+        // For Player Name, capture character input.
+        if self.selected_index == 0 {
+            if is_key_pressed(KeyCode::Backspace) {
+                self.player_name.pop();
+            }
+            // Process all characters pressed this frame.
+            while let Some(c) = get_char_pressed() {
+                if c != '\u{8}' { // ignore backspace as char
+                    if c.is_alphanumeric() || c == ' ' {
+                        self.player_name.push(c);
+                    }
+                }
+            }
+        }
+        // If "Start Game" is selected and Enter is pressed, return true.
+        if self.selected_index == 4 && is_key_pressed(KeyCode::Enter) {
+            return true;
+        }
+        false
+    }
+
+    fn draw(&self) {
+        let start_x = screen_width() / 2.0 - 200.0;
+        let mut start_y = screen_height() / 2.0 - 150.0;
+        let spacing = 50.0;
+
+        // Option 0: Player Name
+        let player_text = format!("Player Name: {}", self.player_name);
+        let color = if self.selected_index == 0 { YELLOW } else { WHITE };
+        draw_text(&player_text, start_x, start_y, 30.0, color);
+        start_y += spacing;
+
+        // Option 1: Music Track
+        let music_text = format!("Music Track: {}", self.music_index + 1);
+        let color = if self.selected_index == 1 { YELLOW } else { WHITE };
+        draw_text(&music_text, start_x, start_y, 30.0, color);
+        start_y += spacing;
+
+        // Option 2: Difficulty
+        let diff_text = format!("Difficulty: {}", self.difficulty.as_str());
+        let color = if self.selected_index == 2 { YELLOW } else { WHITE };
+        draw_text(&diff_text, start_x, start_y, 30.0, color);
+        start_y += spacing;
+
+        // Option 3: Game Mode
+        let mode_text = format!("Game Mode: {}", self.game_mode.as_str());
+        let color = if self.selected_index == 3 { YELLOW } else { WHITE };
+        draw_text(&mode_text, start_x, start_y, 30.0, color);
+        start_y += spacing;
+
+        // Option 4: Start Game
+        let start_text = "Start Game";
+        let color = if self.selected_index == 4 { YELLOW } else { WHITE };
+        draw_text(start_text, start_x, start_y, 30.0, color);
+
+        // Extra instructions for editing player name.
+        if self.selected_index == 0 {
+            draw_text("Type to change name. Backspace to delete.", start_x, start_y + 40.0, 20.0, GRAY);
+        }
+    }
+}
+
+// -------------------------------------------------------------------
+// Updated GameState with new settings.
 struct GameState {
-    // Each cell stores Option<(Color, TetrominoType, piece_id)>
     board: [[Option<(Color, TetrominoType, u32)>; GRID_WIDTH]; GRID_HEIGHT],
     tetromino: Option<Tetromino>,
     next_tetromino: Option<Tetromino>,
@@ -209,18 +396,21 @@ struct GameState {
 
     active_squares: Vec<SquareEffect>,
 
-    next_piece_id: u32, // For unique locked piece tagging.
+    next_piece_id: u32,
 
     mus_mgr: MusicManager,
 
-    // Statistics counter for spawned tetrominoes.
     piece_statistics: HashMap<TetrominoType, u32>,
+
+    // New settings fields:
+    player_name: String,
+    difficulty: Difficulty,
+    game_mode: GameMode,
 }
 
 impl GameState {
     pub fn new() -> Self {
         let mut piece_statistics = HashMap::new();
-        // Initialize counter for the main tetromino types.
         for &piece in &[
             TetrominoType::I,
             TetrominoType::O,
@@ -253,6 +443,9 @@ impl GameState {
             next_piece_id: 1,
             mus_mgr: MusicManager::new(),
             piece_statistics,
+            player_name: "Player".to_string(),
+            difficulty: Difficulty::Normal,
+            game_mode: GameMode::Classic,
         }
     }
 
@@ -270,7 +463,6 @@ impl GameState {
         self.active_squares.clear();
         self.next_piece_id = 1;
 
-        // Reset statistics at the start of a new game.
         self.piece_statistics.clear();
         for &piece in &[
             TetrominoType::I,
@@ -305,9 +497,7 @@ impl GameState {
         };
 
         self.tetromino = Some(Tetromino::new(curr_type));
-        // Count the active tetromino spawn.
         *self.piece_statistics.entry(curr_type).or_insert(0) += 1;
-
         self.next_tetromino = Some(Tetromino::new(next_type));
         self.mus_mgr.play_song();
     }
@@ -385,9 +575,7 @@ impl GameState {
                 self.started = false;
             } else {
                 self.tetromino = Some(next_t);
-                // Increment the statistics for the newly spawned tetromino.
                 *self.piece_statistics.entry(next_t.t_type).or_insert(0) += 1;
-
                 let mut rng = thread_rng();
                 let t_type = match rng.gen_range(0..7) {
                     0 => TetrominoType::I,
@@ -405,9 +593,6 @@ impl GameState {
         }
     }
 
-    // --- Square Detection ---
-    // Only triggers when every cell in a 4x4 candidate is full (and not bonus) and for every piece present,
-    // all its locked cells lie entirely within the candidate.
     pub fn check_for_4x4_squares(&mut self) {
         for y in 0..(GRID_HEIGHT - 3) {
             for x in 0..(GRID_WIDTH - 3) {
@@ -525,7 +710,6 @@ impl GameState {
     }
 
     pub fn process_input(&mut self, delta: f32) {
-        // Hard Drop: We use a separate block to avoid mutable/immutable borrow conflict.
         if is_key_pressed(KeyCode::Up) {
             loop {
                 let can_move_down = {
@@ -544,7 +728,6 @@ impl GameState {
             return;
         }
 
-        // For other inputs, we can use a local copy.
         let curr = self.tetromino.unwrap();
         if is_key_pressed(KeyCode::Left) {
             if !self.check_collision(&curr.shape, (curr.pos.0 - 1, curr.pos.1)) {
@@ -661,7 +844,13 @@ impl GameState {
         }
         self.process_input(dt);
         if let Some(curr) = self.tetromino {
-            let speed = if is_key_down(KeyCode::Down) { SOFT_DROP_SPEED } else { FALL_SPEED };
+            // Adjust fall speed based on difficulty.
+            let base_fall_speed = match self.difficulty {
+                Difficulty::Easy => 2.0,
+                Difficulty::Normal => 3.0,
+                Difficulty::Hard => 4.0,
+            };
+            let speed = if is_key_down(KeyCode::Down) { SOFT_DROP_SPEED } else { base_fall_speed };
             let fall_interval = 1.0 / speed;
             self.fall_timer += dt;
             if self.fall_timer >= fall_interval {
@@ -679,7 +868,7 @@ impl GameState {
     pub fn draw(&mut self) {
         clear_background(BLACK_COLOR);
 
-        // If the game hasn't started, show "Press SPACE to start"
+        // When game is not started, show start prompt.
         if !self.started {
             self.mus_mgr.reset();
             let msg = "Press SPACE to start";
@@ -690,19 +879,18 @@ impl GameState {
             return;
         }
 
-        // Draw the main board background
+        // Draw game board background.
         let board_w = GRID_WIDTH as f32 * TILE_SIZE;
         let board_h = GRID_HEIGHT as f32 * TILE_SIZE;
         let offset_x = (screen_width() - board_w) / 2.0;
         let offset_y = (screen_height() - board_h) / 2.0 - 50.0;
         draw_rectangle(offset_x, offset_y, board_w, board_h, GAME_AREA_COLOR);
 
-        // Draw locked pieces on the board
+        // Draw locked pieces.
         for y in 0..GRID_HEIGHT {
             for x in 0..GRID_WIDTH {
                 if let Some((color, _t, _id)) = self.board[y][x] {
                     let mut draw_color = color;
-                    // If it's in an active 4x4 square effect, apply the blinking effect
                     for eff in &self.active_squares {
                         if x >= eff.x && x < eff.x + 4 && y >= eff.y && y < eff.y + 4 {
                             let rel_x = x - eff.x;
@@ -722,7 +910,7 @@ impl GameState {
             }
         }
 
-        // Draw the "ghost" piece (projection)
+        // Draw ghost piece.
         if let Some(curr) = self.tetromino {
             let mut ghost = curr;
             let mut iter = 0;
@@ -739,7 +927,7 @@ impl GameState {
                 draw_rectangle(px, py, TILE_SIZE, TILE_SIZE, ghost_color);
             }
 
-            // Draw the active falling piece
+            // Draw active falling tetromino.
             for &[dx, dy] in &curr.shape {
                 let x = curr.pos.0 + dx;
                 let y = curr.pos.1 + dy;
@@ -749,7 +937,7 @@ impl GameState {
             }
         }
 
-        // If lines are clearing, flash them
+        // Flash clearing lines.
         draw_rectangle(offset_x, offset_y, board_w, TILE_SIZE * 2.0, BLACK_COLOR);
         if self.line_clear_timer > 0.0 {
             let frames = (self.line_clear_timer * 60.0) as i32;
@@ -761,11 +949,11 @@ impl GameState {
             }
         }
 
-        // Lines and Score on the right side
+        // Draw score and lines.
         draw_text(&format!("Lines: {}", self.lines_cleared), screen_width() - 210.0, 170.0, 40.0, WHITE);
         draw_text(&format!("Score: {}", self.score), screen_width() - 210.0, 220.0, 40.0, WHITE);
 
-        // Game Over message
+        // Game Over message.
         if self.game_over {
             let msg = "Game Over";
             let measure = measure_text(msg, None, 50, 1.0);
@@ -774,7 +962,7 @@ impl GameState {
             draw_text(msg, x, y, 50.0, RED);
         }
 
-        // Pause overlay
+        // Pause overlay.
         if self.paused {
             draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0,0.0,0.0,0.6));
             let msg = "Paused";
@@ -782,15 +970,12 @@ impl GameState {
             draw_text(msg, (screen_width()-measure.width)/2.0, screen_height()/2.0, 50.0, YELLOW);
         }
 
-        // -- LEFT SIDE PANELS: Hold piece & Piece Stats --
-
-        // Draw "Hold" text and hold piece preview
+        // LEFT SIDE PANELS: Hold piece & Piece Stats.
         draw_text("Hold", 79.0, 55.0, 40.0, WHITE);
         if let Some(ref hold_piece) = self.hold_tetromino {
             draw_preview(hold_piece, 79.0, 90.0, PREVIEW_TILE_SIZE);
         }
 
-        // Draw the piece statistics under the hold piece
         let stats_label_x = 79.0;
         let stats_label_y = 200.0;
         draw_text("Piece Stats", stats_label_x, stats_label_y, 30.0, WHITE);
@@ -805,36 +990,26 @@ impl GameState {
             TetrominoType::L,
         ];
 
-        // Each piece gets a small preview plus its count
         for (i, &piece_type) in stat_types.iter().enumerate() {
             let piece_y = stats_label_y + 40.0 + (i as f32 * 50.0);
-            // Create a dummy tetromino just for drawing its shape
             let t = Tetromino {
                 shape: TETROMINO_SHAPES[piece_type as usize],
                 pos: (0, 0),
                 color: NES_COLORS[piece_type as usize],
                 t_type: piece_type,
             };
-            // Draw a small preview on the left
             draw_preview(&t, stats_label_x, piece_y, 15.0);
-            // Show the count on the right
             let count = self.piece_statistics.get(&piece_type).unwrap_or(&0);
-            draw_text(
-                &format!("{}", count),
-                stats_label_x + 50.0,
-                piece_y + 20.0,
-                20.0,
-                WHITE,
-            );
+            draw_text(&format!("{}", count), stats_label_x + 50.0, piece_y + 20.0, 20.0, WHITE);
         }
 
-        // -- RIGHT SIDE: Next piece label & preview --
+        // RIGHT SIDE: Next piece label & preview.
         draw_text("Next", screen_width() - 210.0, 55.0, 40.0, WHITE);
         if let Some(ref next_piece) = self.next_tetromino {
             draw_preview(next_piece, screen_width() - 218.0, 70.0, PREVIEW_TILE_SIZE);
         }
 
-        // Controls text at the bottom
+        // Controls text.
         let controls_text = "\
 Controls:
  Left/Right: Move
@@ -843,7 +1018,7 @@ Controls:
  Z/X: Rotate
  C: Hold
  Enter: Pause
- Space: Start
+ Space: Start (in game)
  N: Change Song
  M: Mute Music";
         let text_x = 20.0;
@@ -938,18 +1113,37 @@ fn draw_preview(tetromino: &Tetromino, pos_x: f32, pos_y: f32, tile_size: f32) {
     }
 }
 
+// -------------------------------------------------------------------
+// Main entry point with integrated main menu.
 #[macroquad::main("Tetris")]
 async fn main() {
-    // Optionally, set the window size:
     request_new_screen_size(1410.0, 700.0);
+    let mut in_menu = true;
+    let mut main_menu = MainMenu::new();
     let mut game_state = GameState::new();
 
     loop {
-        if is_key_pressed(KeyCode::Space) && !game_state.started {
-            game_state.start_game();
+        clear_background(BLACK);
+        if in_menu {
+            if main_menu.update() {
+                // Apply menu settings to game state.
+                game_state = GameState::new();
+                game_state.player_name = main_menu.player_name.clone();
+                game_state.difficulty = main_menu.difficulty;
+                game_state.game_mode = main_menu.game_mode;
+                game_state.mus_mgr.mus_track = main_menu.music_index as u32;
+                game_state.start_game();
+                in_menu = false;
+            }
+            main_menu.draw();
+        } else {
+            game_state.update();
+            game_state.draw();
+            if game_state.game_over {
+                in_menu = true;
+                main_menu = MainMenu::new();
+            }
         }
-        game_state.update();
-        game_state.draw();
         next_frame().await;
     }
 }
