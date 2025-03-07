@@ -6,7 +6,7 @@ use std::io::Cursor;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use rodio::source::Source;
 
-mod menu; // Include the menu module
+mod menu;
 use menu::{Difficulty, GameMode, MainMenu};
 
 use serde::{Serialize, Deserialize};
@@ -57,8 +57,7 @@ const MUSIC_A_GB: &[u8] = include_bytes!("../resources/music/music-a-gb.mp3");
 const MUSIC_A: &[u8] = include_bytes!("../resources/music/music-a.mp3");
 const MUSIC_B: &[u8] = include_bytes!("../resources/music/music-b.mp3");
 
-//Music list now contains a tuple of song as bytes and the panic mode speed factor. This is not a set variable cause some songs sound better at different factors.
-const MUSIC_LIST: [(&[u8],f32); 3] = [(MUSIC_A_GB,1.5), (MUSIC_A,2.0), (MUSIC_B,1.25)];
+const MUSIC_LIST: [&[u8]; 3] = [MUSIC_A_GB, MUSIC_A, MUSIC_B];
 
 // -------------------------------------------------------------------
 // Game constants
@@ -80,26 +79,25 @@ const GOLD_POINTS: u32 = 500;
 const SILVER_POINTS: u32 = 200;
 
 const NES_COLORS: [Color; 7] = [
-    Color { r: 0.0,    g: 1.0,    b: 1.0,    a: 1.0 }, // I
-    Color { r: 1.0,    g: 1.0,    b: 0.0,    a: 1.0 }, // O
-    Color { r: 0.6667, g: 0.0,    b: 1.0,    a: 1.0 }, // T
-    Color { r: 0.0,    g: 1.0,    b: 0.0,    a: 1.0 }, // S
-    Color { r: 1.0,    g: 0.0,    b: 0.0,    a: 1.0 }, // Z
-    Color { r: 0.0,    g: 0.0,    b: 1.0,    a: 1.0 }, // J
-    Color { r: 1.0,    g: 0.3334, b: 0.0,    a: 1.0 }, // L
+    Color { r: 0.0,    g: 1.0,    b: 1.0,    a: 1.0 },
+    Color { r: 1.0,    g: 1.0,    b: 0.0,    a: 1.0 },
+    Color { r: 0.6667, g: 0.0,    b: 1.0,    a: 1.0 },
+    Color { r: 0.0,    g: 1.0,    b: 0.0,    a: 1.0 },
+    Color { r: 1.0,    g: 0.0,    b: 0.0,    a: 1.0 },
+    Color { r: 0.0,    g: 0.0,    b: 1.0,    a: 1.0 },
+    Color { r: 1.0,    g: 0.3334, b: 0.0,    a: 1.0 },
 ];
 
 // -------------------------------------------------------------------
 // MusicManager modified to use embedded audio.
 #[allow(dead_code)]
 struct MusicManager {
-    mus_stream:OutputStream,
-    mus_stream_hndl:OutputStreamHandle,
-    mus_sink:Sink,
-    mus_track:u32,
-    muted:bool,
-    paused:bool,
-    panic:bool,
+    mus_stream: OutputStream,
+    mus_stream_hndl: OutputStreamHandle,
+    mus_sink: Sink,
+    mus_track: u32,
+    muted: bool,
+    paused: bool,
 }
 
 impl MusicManager {
@@ -107,52 +105,29 @@ impl MusicManager {
         let (stream, stream_handle) = OutputStream::try_default().unwrap();
         let sink = Sink::try_new(&stream_handle).unwrap();
         MusicManager {
-            mus_stream:stream,
-            mus_stream_hndl:stream_handle,
-            mus_sink:sink,
-            mus_track:0,
-            muted:false,
-            paused:false,
-            panic:false,
+            mus_stream: stream,
+            mus_stream_hndl: stream_handle,
+            mus_sink: sink,
+            mus_track: 0,
+            muted: false,
+            paused: false,
         }
     }
 
     pub fn play_song(&mut self) {
-        // Clear the current sink's buffer.
         self.mus_sink.clear();
-        // Determine the current track from the embedded MUSIC_LIST.
         let track_index = (self.mus_track % MUSIC_LIST.len() as u32) as usize;
-        let track_data = MUSIC_LIST[track_index].0;
-        // Create an in-memory cursor for the embedded audio data.
+        self.mus_track += 1;
+        let track_data = MUSIC_LIST[track_index];
         let cursor = Cursor::new(track_data);
-        // Decode the audio data and set it to repeat infinitely.
         let source = Decoder::new(cursor).unwrap().repeat_infinite();
-        // Append the source into the sink and set volume.
         self.mus_sink.append(source);
         self.mus_sink.set_volume(0.5);
         self.mus_sink.play();
-        //check if in panic. set speed accordingly.
-        if self.panic { 
-            self.mus_sink.set_speed(MUSIC_LIST[track_index].1);
-        }
-        //iterate the track
-        self.mus_track += 1;
     }
 
-    pub fn toggle_panic(&mut self){
-        self.panic = !self.panic;
-        let track_index = (self.mus_track-1 % MUSIC_LIST.len() as u32) as usize;
-        if self.panic {
-            self.mus_sink.set_speed(MUSIC_LIST[track_index].1);
-        }
-        else{
-            self.mus_sink.set_speed(1.0);
-        }
-    }
-
-
-    pub fn mute(&mut self){
-        if self.muted{
+    pub fn mute(&mut self) {
+        if self.muted {
             self.mus_sink.set_volume(0.5);
         } else {
             self.mus_sink.set_volume(0.0);
@@ -171,37 +146,36 @@ impl MusicManager {
 
     pub fn reset(&mut self) {
         self.mus_sink.clear();
-        self.mus_sink.set_speed(1.0);
         self.mus_track = 0;
-        self.panic = false;
     }
 }
 
+// -------------------------------------------------------------------
 // Tetromino definitions and game structures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum TetrominoType {
     I, O, T, S, Z, J, L,
-    BonusGold, BonusSilver, // For bonus blocks.
+    BonusGold, BonusSilver,
 }
 
 const TETROMINO_SHAPES: [[[i32; 2]; 4]; 7] = [
-    [[0,0],[1,0],[2,0],[3,0]],    // I
-    [[0,0],[1,0],[0,1],[1,1]],    // O
-    [[1,0],[0,1],[1,1],[2,1]],    // T
-    [[1,0],[2,0],[0,1],[1,1]],    // S
-    [[0,0],[1,0],[1,1],[2,1]],    // Z
-    [[0,0],[0,1],[1,1],[2,1]],    // J
-    [[0,0],[1,0],[2,0],[0,1]],    // L
+    [[0,0],[1,0],[2,0],[3,0]],
+    [[0,0],[1,0],[0,1],[1,1]],
+    [[1,0],[0,1],[1,1],[2,1]],
+    [[1,0],[2,0],[0,1],[1,1]],
+    [[0,0],[1,0],[1,1],[2,1]],
+    [[0,0],[0,1],[1,1],[2,1]],
+    [[0,0],[1,0],[2,0],[0,1]],
 ];
 
 const TETROMINO_ROTATION_OFFSETS: [[i32; 2]; 7] = [
-    [1,0], // I
-    [0,0], // O (doesn't rotate)
-    [1,1], // T
-    [1,1], // S
-    [1,1], // Z
-    [1,1], // J
-    [1,1], // L
+    [1,0],
+    [0,0],
+    [1,1],
+    [1,1],
+    [1,1],
+    [1,1],
+    [1,1],
 ];
 
 #[derive(Clone, Copy)]
@@ -243,15 +217,15 @@ struct SquareEffect {
     x: usize,
     y: usize,
     is_gold: bool,
-    timer: f32,             // Duration per blink phase.
-    flash_on: bool,         // Whether bonus color is displayed.
-    blinks_remaining: u32,  // Number of on-off cycles remaining.
+    timer: f32,
+    flash_on: bool,
+    blinks_remaining: u32,
     original: [[(Color, TetrominoType, u32); 4]; 4],
 }
 
+// -------------------------------------------------------------------
 // GameState structure with game settings.
 struct GameState {
-    // Each cell stores Option<(Color, TetrominoType, piece_id)>
     board: [[Option<(Color, TetrominoType, u32)>; GRID_WIDTH]; GRID_HEIGHT],
     tetromino: Option<Tetromino>,
     next_tetromino: Option<Tetromino>,
@@ -260,10 +234,10 @@ struct GameState {
 
     started: bool,
     paused: bool,
-    in_panic: bool,
     game_over: bool,
     lines_cleared: u32,
     score: u32,
+    score_saved: bool,
 
     left_timer: f32,
     right_timer: f32,
@@ -274,14 +248,12 @@ struct GameState {
 
     active_squares: Vec<SquareEffect>,
 
-    next_piece_id: u32, // For unique locked piece tagging.
+    next_piece_id: u32,
 
     mus_mgr: MusicManager,
 
-    // Statistics counter for spawned tetrominoes.
     piece_statistics: HashMap<TetrominoType, u32>,
 
-    // New settings fields:
     player_name: String,
     difficulty: Difficulty,
     game_mode: GameMode,
@@ -290,7 +262,6 @@ struct GameState {
 impl GameState {
     pub fn new() -> Self {
         let mut piece_statistics = HashMap::new();
-        // Initialize counter for the main tetromino types.
         for &piece in &[
             TetrominoType::I,
             TetrominoType::O,
@@ -311,10 +282,10 @@ impl GameState {
             hold_used: false,
             started: false,
             paused: false,
-            in_panic: false,
             game_over: false,
             lines_cleared: 0,
             score: 0,
+            score_saved: false,
             left_timer: 0.0,
             right_timer: 0.0,
             fall_timer: 0.0,
@@ -334,7 +305,6 @@ impl GameState {
         self.started = true;
         self.game_over = false;
         self.paused = false;
-        self.in_panic = false;
         self.lines_cleared = 0;
         self.score = 0;
         self.board = [[None; GRID_WIDTH]; GRID_HEIGHT];
@@ -345,7 +315,6 @@ impl GameState {
         self.active_squares.clear();
         self.next_piece_id = 1;
 
-        // Reset statistics at the start of a new game.
         self.piece_statistics.clear();
         for &piece in &[
             TetrominoType::I,
@@ -464,6 +433,7 @@ impl GameState {
                 // Increment the statistics for the newly spawned tetromino.
                 *self.piece_statistics.entry(next_t.t_type).or_insert(0) += 1;
                 let mut rng = ::rand::rng();
+                let t_type = match rng.random_range(0..7) {
                     0 => TetrominoType::I,
                     1 => TetrominoType::O,
                     2 => TetrominoType::T,
@@ -617,8 +587,7 @@ impl GameState {
             self.lock_tetromino();
             return;
         }
-
-        // For other inputs, we can use a local copy.
+    
         let curr = self.tetromino.unwrap();
         if is_key_pressed(KeyCode::Left) {
             if !self.check_collision(&curr.shape, (curr.pos.0 - 1, curr.pos.1)) {
@@ -1103,7 +1072,7 @@ async fn main() {
             }
         }
         game_state.update();
-        game_state.draw();
+
         next_frame().await;
     }
 }
