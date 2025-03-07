@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::load_config;
 
 #[derive(Clone, Copy)]
 pub enum Difficulty {
@@ -68,22 +69,35 @@ pub struct MainMenu {
     pub music_index: usize,
     pub difficulty: Difficulty,
     pub game_mode: GameMode,
+    pub high_score: u32,
+    pub high_line_count: u32,
+    pub high_game_mode: String,
+    pub high_score_player: String,
 }
 
 impl MainMenu {
     pub fn new() -> Self {
+        let config = load_config();
+        
         Self {
-            selected_index: 0,
-            player_name: "Player".to_string(),
-            music_index: 0,
+            selected_index: 4,
+            player_name: config.player_name.trim().to_string(),
+            music_index: config.last_song,
             difficulty: Difficulty::Normal,
             game_mode: GameMode::Classic,
+            high_score: config.high_score,
+            high_line_count: config.line_count,
+            high_game_mode: config.game_mode,
+            high_score_player: config.player_name,
         }
     }
 
     /// Returns true if "Start Game" is activated.
-    pub fn update(&mut self) -> bool {
-        // Navigate menu options.
+    pub fn update(&mut self, in_menu: bool) -> bool {
+        if !in_menu {
+            return false; // Do not process menu input if the game is running
+        }
+    
         if is_key_pressed(KeyCode::Up) {
             if self.selected_index == 0 {
                 self.selected_index = 4;
@@ -94,8 +108,7 @@ impl MainMenu {
         if is_key_pressed(KeyCode::Down) {
             self.selected_index = (self.selected_index + 1) % 5;
         }
-
-        // For non-text fields, use left/right.
+    
         if self.selected_index == 1 {
             if is_key_pressed(KeyCode::Left) {
                 if self.music_index == 0 {
@@ -124,39 +137,45 @@ impl MainMenu {
                 self.game_mode = self.game_mode.next();
             }
         }
-        // For Player Name, capture character input.
+    
+        // Only allow name input when the name field is selected
         if self.selected_index == 0 {
             if is_key_pressed(KeyCode::Backspace) {
                 self.player_name.pop();
             }
             // Process all characters pressed this frame.
             while let Some(c) = get_char_pressed() {
-                if c != '\u{8}' { // ignore backspace as char
-                    if c.is_alphanumeric() || c == ' ' {
-                        self.player_name.push(c);
-                    }
+                if c.is_alphanumeric() || c == ' ' {
+                    self.player_name.push(c);
                 }
             }
         }
         // If "Start Game" is selected and Enter is pressed, return true.
+    
         if self.selected_index == 4 && is_key_pressed(KeyCode::Enter) {
             return true;
         }
+        
         false
     }
-
+    
     pub fn draw(&self) {
         let start_x = screen_width() / 2.0 - 200.0;
-        let mut start_y = screen_height() / 2.0 - 150.0;
+        // Shift up slightly to display the saved config at the top.
+        let mut start_y = screen_height() / 2.0 - 200.0;
         let spacing = 50.0;
 
-        // Option 0: Player Name
+        // Display saved configuration: GameMode, high score, line count, and player name.
+        let config_text = format!("GameMode: {}, High Score: {}, Lines: {}, {}",
+            self.high_game_mode, self.high_score, self.high_line_count, self.high_score_player);
+        draw_text(&config_text, start_x, start_y, 30.0, WHITE);
+        start_y += spacing;
+
         let player_text = format!("Player Name: {}", self.player_name);
         let color = if self.selected_index == 0 { YELLOW } else { WHITE };
         draw_text(&player_text, start_x, start_y, 30.0, color);
         start_y += spacing;
 
-        // Option 1: Music Track
         let music_text = format!("Music Track: {}", self.music_index + 1);
         let color = if self.selected_index == 1 { YELLOW } else { WHITE };
         draw_text(&music_text, start_x, start_y, 30.0, color);
